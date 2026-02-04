@@ -26,6 +26,7 @@ def test_spark_session():
 def test_data_loading():
     """Test de chargement des données"""
     print("Test 2: Chargement des données...", end=" ")
+    spark = None
     try:
         spark = SparkSession.builder \
             .appName("Test") \
@@ -35,7 +36,6 @@ def test_data_loading():
         data_path = "data/employee_data.csv"
         if not os.path.exists(data_path):
             print(f"✗ FAIL: Fichier {data_path} non trouvé")
-            spark.stop()
             return False
         
         df = spark.read.csv(data_path, header=True, inferSchema=True)
@@ -44,20 +44,22 @@ def test_data_loading():
         
         if row_count > 0 and col_count == 8:
             print(f"✓ PASS ({row_count} lignes, {col_count} colonnes)")
-            spark.stop()
             return True
         else:
             print(f"✗ FAIL: Dimensions incorrectes ({row_count} lignes, {col_count} colonnes)")
-            spark.stop()
             return False
     except Exception as e:
         print(f"✗ FAIL: {e}")
         return False
+    finally:
+        if spark:
+            spark.stop()
 
 
 def test_data_structure():
     """Test de la structure des données"""
     print("Test 3: Vérification de la structure...", end=" ")
+    spark = None
     try:
         spark = SparkSession.builder \
             .appName("Test") \
@@ -71,20 +73,22 @@ def test_data_structure():
         
         if set(df.columns) == set(expected_columns):
             print("✓ PASS")
-            spark.stop()
             return True
         else:
             print(f"✗ FAIL: Colonnes attendues: {expected_columns}, trouvées: {df.columns}")
-            spark.stop()
             return False
     except Exception as e:
         print(f"✗ FAIL: {e}")
         return False
+    finally:
+        if spark:
+            spark.stop()
 
 
 def test_aggregations():
     """Test des agrégations"""
     print("Test 4: Test des agrégations...", end=" ")
+    spark = None
     try:
         spark = SparkSession.builder \
             .appName("Test") \
@@ -98,20 +102,22 @@ def test_aggregations():
         
         if dept_count > 0:
             print(f"✓ PASS ({dept_count} départements)")
-            spark.stop()
             return True
         else:
             print("✗ FAIL: Agrégation échouée")
-            spark.stop()
             return False
     except Exception as e:
         print(f"✗ FAIL: {e}")
         return False
+    finally:
+        if spark:
+            spark.stop()
 
 
 def test_correlations():
     """Test du calcul de corrélations"""
     print("Test 5: Test des corrélations...", end=" ")
+    spark = None
     try:
         spark = SparkSession.builder \
             .appName("Test") \
@@ -125,15 +131,16 @@ def test_correlations():
         
         if corr is not None and -1 <= corr <= 1:
             print(f"✓ PASS (corrélation: {corr:.3f})")
-            spark.stop()
             return True
         else:
             print("✗ FAIL: Corrélation invalide")
-            spark.stop()
             return False
     except Exception as e:
         print(f"✗ FAIL: {e}")
         return False
+    finally:
+        if spark:
+            spark.stop()
 
 
 def main():
