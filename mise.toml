@@ -13,7 +13,9 @@
 # Configuration Java pour PySpark
 JAVA_HOME = "/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
 # Configuration Spark
-SPARK_HOME = "{{ env.HOME }}/.local/share/spark"
+# Note: SPARK_HOME est optionnel si Spark n'est pas installé séparément
+# PySpark intégré fonctionnera en mode local sans SPARK_HOME
+# SPARK_HOME = "{{ env.HOME }}/.local/share/spark"
 SPARK_MASTER_HOST = "localhost"
 SPARK_MASTER_PORT = "7077"
 SPARK_MASTER_WEBUI_PORT = "8080"
@@ -226,7 +228,15 @@ jps 2>/dev/null | grep -E "(Master|Worker)" || echo "   Aucun processus Spark tr
 
 [tasks.analyse]
 description = "📊 Exécuter l'analyse PySpark principale"
-run = "uv run python analyse.py"
+run = """
+#!/bin/bash
+# Désactiver SPARK_HOME si Spark n'est pas installé séparément
+# pour permettre à PySpark intégré de fonctionner
+if [ ! -d "${SPARK_HOME}/bin" ]; then
+    unset SPARK_HOME
+fi
+uv run python analyse.py
+"""
 
 [tasks.analyse-cluster]
 description = "📊 Exécuter l'analyse sur le cluster Spark"
