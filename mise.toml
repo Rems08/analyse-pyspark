@@ -1,0 +1,541 @@
+# =============================================================================
+# Configuration Mise pour Analyse PySpark
+# =============================================================================
+# Ce fichier contient toutes les tâches nécessaires pour le projet PySpark
+# incluant la gestion du cluster Spark (master/workers), l'analyse de données,
+# les tests, et les utilitaires de développement.
+#
+# Usage: mise run <task>
+# Liste des tâches: mise tasks
+# =============================================================================
+
+[env]
+# Configuration Java pour PySpark
+JAVA_HOME = "/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
+# Configuration Spark
+SPARK_HOME = "{{ env.HOME }}/.local/share/spark"
+SPARK_MASTER_HOST = "localhost"
+SPARK_MASTER_PORT = "7077"
+SPARK_MASTER_WEBUI_PORT = "8080"
+SPARK_WORKER_WEBUI_PORT = "8081"
+SPARK_WORKER_CORES = "2"
+SPARK_WORKER_MEMORY = "2g"
+# Configuration PySpark
+PYSPARK_PYTHON = "python3"
+PYSPARK_DRIVER_PYTHON = "python3"
+# Dataset
+DATA_FILE = "data/employee_data.csv"
+
+[tools]
+python = "3.12"
+
+# =============================================================================
+# CLUSTER SPARK - MASTER
+# =============================================================================
+
+[tasks.spark-master-start]
+description = "🚀 Démarrer le Spark Master"
+run = """
+#!/bin/bash
+set -e
+echo "🚀 Démarrage du Spark Master..."
+echo "   Host: $SPARK_MASTER_HOST"
+echo "   Port: $SPARK_MASTER_PORT"
+echo "   WebUI: http://localhost:$SPARK_MASTER_WEBUI_PORT"
+
+if command -v spark-class &> /dev/null; then
+    spark-class org.apache.spark.deploy.master.Master \
+        --host $SPARK_MASTER_HOST \
+        --port $SPARK_MASTER_PORT \
+        --webui-port $SPARK_MASTER_WEBUI_PORT
+else
+    echo "⚠️  Spark n'est pas installé localement."
+    echo "   Utilisation du mode local intégré à PySpark."
+    echo "   Pour un cluster complet, installez Spark: brew install apache-spark"
+fi
+"""
+
+[tasks.spark-master-stop]
+description = "🛑 Arrêter le Spark Master"
+run = """
+#!/bin/bash
+echo "🛑 Arrêt du Spark Master..."
+pkill -f "spark.*Master" || echo "Aucun Master en cours d'exécution"
+echo "✓ Spark Master arrêté"
+"""
+
+# =============================================================================
+# CLUSTER SPARK - WORKERS
+# =============================================================================
+
+[tasks.spark-worker-start]
+description = "👷 Démarrer un Spark Worker"
+run = """
+#!/bin/bash
+set -e
+MASTER_URL="spark://$SPARK_MASTER_HOST:$SPARK_MASTER_PORT"
+echo "👷 Démarrage du Spark Worker..."
+echo "   Master URL: $MASTER_URL"
+echo "   Cores: $SPARK_WORKER_CORES"
+echo "   Memory: $SPARK_WORKER_MEMORY"
+echo "   WebUI: http://localhost:$SPARK_WORKER_WEBUI_PORT"
+
+if command -v spark-class &> /dev/null; then
+    spark-class org.apache.spark.deploy.worker.Worker \
+        --cores $SPARK_WORKER_CORES \
+        --memory $SPARK_WORKER_MEMORY \
+        --webui-port $SPARK_WORKER_WEBUI_PORT \
+        $MASTER_URL
+else
+    echo "⚠️  Spark n'est pas installé localement."
+    echo "   Utilisation du mode local intégré à PySpark."
+fi
+"""
+
+[tasks.spark-worker-stop]
+description = "🛑 Arrêter les Spark Workers"
+run = """
+#!/bin/bash
+echo "🛑 Arrêt des Spark Workers..."
+pkill -f "spark.*Worker" || echo "Aucun Worker en cours d'exécution"
+echo "✓ Spark Workers arrêtés"
+"""
+
+[tasks.spark-workers-start]
+description = "👷👷 Démarrer plusieurs Spark Workers (2 par défaut)"
+run = """
+#!/bin/bash
+set -e
+NUM_WORKERS=${1:-2}
+MASTER_URL="spark://$SPARK_MASTER_HOST:$SPARK_MASTER_PORT"
+echo "👷 Démarrage de $NUM_WORKERS Spark Workers..."
+
+for i in $(seq 1 $NUM_WORKERS); do
+    WORKER_PORT=$((8081 + $i - 1))
+    echo "   Démarrage Worker $i sur le port WebUI $WORKER_PORT..."
+    
+    if command -v spark-class &> /dev/null; then
+        spark-class org.apache.spark.deploy.worker.Worker \
+            --cores $SPARK_WORKER_CORES \
+            --memory $SPARK_WORKER_MEMORY \
+            --webui-port $WORKER_PORT \
+            $MASTER_URL &
+    fi
+done
+
+echo "✓ $NUM_WORKERS Workers démarrés"
+"""
+
+# =============================================================================
+# CLUSTER SPARK - GESTION COMPLÈTE
+# =============================================================================
+
+[tasks.spark-cluster-start]
+description = "🌟 Démarrer le cluster Spark complet (Master + 2 Workers)"
+run = """
+#!/bin/bash
+set -e
+echo "🌟 Démarrage du cluster Spark complet..."
+echo ""
+
+# Démarrer le Master en arrière-plan
+echo "1️⃣  Démarrage du Master..."
+if command -v spark-class &> /dev/null; then
+    spark-class org.apache.spark.deploy.master.Master \
+        --host $SPARK_MASTER_HOST \
+        --port $SPARK_MASTER_PORT \
+        --webui-port $SPARK_MASTER_WEBUI_PORT &
+    sleep 3
+    
+    # Démarrer les Workers
+    echo "2️⃣  Démarrage des Workers..."
+    for i in 1 2; do
+        WORKER_PORT=$((8081 + $i - 1))
+        spark-class org.apache.spark.deploy.worker.Worker \
+            --cores $SPARK_WORKER_CORES \
+            --memory $SPARK_WORKER_MEMORY \
+            --webui-port $WORKER_PORT \
+            spark://$SPARK_MASTER_HOST:$SPARK_MASTER_PORT &
+        sleep 1
+    done
+    
+    echo ""
+    echo "✅ Cluster Spark démarré!"
+    echo ""
+    echo "📊 Interfaces Web:"
+    echo "   Master UI: http://localhost:$SPARK_MASTER_WEBUI_PORT"
+    echo "   Worker 1 UI: http://localhost:8081"
+    echo "   Worker 2 UI: http://localhost:8082"
+    echo ""
+    echo "🔗 URL de connexion pour vos applications:"
+    echo "   spark://$SPARK_MASTER_HOST:$SPARK_MASTER_PORT"
+else
+    echo "⚠️  Spark standalone n'est pas installé."
+    echo "   Utilisez: brew install apache-spark"
+    echo ""
+    echo "💡 Alternative: utilisez le mode local intégré à PySpark"
+    echo "   mise run analyse"
+fi
+"""
+
+[tasks.spark-cluster-stop]
+description = "🛑 Arrêter le cluster Spark complet"
+run = """
+#!/bin/bash
+echo "🛑 Arrêt du cluster Spark complet..."
+pkill -f "spark.*Worker" 2>/dev/null || true
+pkill -f "spark.*Master" 2>/dev/null || true
+echo "✓ Cluster Spark arrêté"
+"""
+
+[tasks.spark-cluster-status]
+description = "📊 Afficher le statut du cluster Spark"
+run = """
+#!/bin/bash
+echo "📊 Statut du cluster Spark"
+echo "=========================="
+echo ""
+
+# Vérifier le Master
+if pgrep -f "spark.*Master" > /dev/null; then
+    echo "✅ Master: En cours d'exécution"
+    echo "   URL: spark://$SPARK_MASTER_HOST:$SPARK_MASTER_PORT"
+    echo "   WebUI: http://localhost:$SPARK_MASTER_WEBUI_PORT"
+else
+    echo "❌ Master: Arrêté"
+fi
+
+echo ""
+
+# Compter les Workers
+WORKER_COUNT=$(pgrep -f "spark.*Worker" | wc -l | tr -d ' ')
+if [ "$WORKER_COUNT" -gt 0 ]; then
+    echo "✅ Workers: $WORKER_COUNT en cours d'exécution"
+else
+    echo "❌ Workers: Aucun en cours d'exécution"
+fi
+
+echo ""
+echo "💡 Processus Java Spark:"
+jps 2>/dev/null | grep -E "(Master|Worker)" || echo "   Aucun processus Spark trouvé"
+"""
+
+# =============================================================================
+# ANALYSE DE DONNÉES
+# =============================================================================
+
+[tasks.analyse]
+description = "📊 Exécuter l'analyse PySpark principale"
+run = "uv run python analyse.py"
+
+[tasks.analyse-cluster]
+description = "📊 Exécuter l'analyse sur le cluster Spark"
+run = """
+#!/bin/bash
+MASTER_URL="spark://$SPARK_MASTER_HOST:$SPARK_MASTER_PORT"
+echo "📊 Exécution de l'analyse sur le cluster Spark..."
+echo "   Master: $MASTER_URL"
+echo ""
+
+if command -v spark-submit &> /dev/null; then
+    spark-submit \
+        --master $MASTER_URL \
+        --deploy-mode client \
+        --driver-memory 2g \
+        --executor-memory 2g \
+        --executor-cores 2 \
+        analyse.py
+else
+    echo "⚠️  spark-submit non trouvé, utilisation de PySpark en mode local"
+    uv run python analyse.py
+fi
+"""
+
+[tasks.analyse-local]
+description = "📊 Exécuter l'analyse en mode local (sans cluster)"
+run = """
+#!/bin/bash
+echo "📊 Exécution de l'analyse en mode local..."
+echo "   Utilisation du mode local[*] de PySpark"
+echo ""
+uv run python analyse.py
+"""
+
+[tasks.notebook]
+description = "📓 Lancer Jupyter Notebook pour l'analyse interactive"
+run = """
+#!/bin/bash
+echo "📓 Lancement de Jupyter Notebook..."
+uv run jupyter notebook analyse_notebook.ipynb
+"""
+
+[tasks.lab]
+description = "🧪 Lancer JupyterLab pour l'analyse interactive"
+run = """
+#!/bin/bash
+echo "🧪 Lancement de JupyterLab..."
+uv run jupyter lab
+"""
+
+# =============================================================================
+# PYSPARK SHELL
+# =============================================================================
+
+[tasks.pyspark-shell]
+description = "🐍 Lancer le shell PySpark interactif (mode local)"
+run = """
+#!/bin/bash
+echo "🐍 Lancement du shell PySpark..."
+echo "   Mode: local[*]"
+echo ""
+uv run pyspark --master local[*]
+"""
+
+[tasks.pyspark-shell-cluster]
+description = "🐍 Lancer le shell PySpark connecté au cluster"
+run = """
+#!/bin/bash
+MASTER_URL="spark://$SPARK_MASTER_HOST:$SPARK_MASTER_PORT"
+echo "🐍 Lancement du shell PySpark..."
+echo "   Master: $MASTER_URL"
+echo ""
+
+if command -v pyspark &> /dev/null; then
+    pyspark --master $MASTER_URL
+else
+    uv run pyspark --master $MASTER_URL
+fi
+"""
+
+[tasks.spark-sql]
+description = "💾 Lancer le shell Spark SQL"
+run = """
+#!/bin/bash
+echo "💾 Lancement du shell Spark SQL..."
+if command -v spark-sql &> /dev/null; then
+    spark-sql
+else
+    echo "⚠️  spark-sql non disponible, utilisez pyspark à la place"
+    echo "   mise run pyspark-shell"
+fi
+"""
+
+# =============================================================================
+# TESTS
+# =============================================================================
+
+[tasks.test]
+description = "🧪 Exécuter les tests unitaires"
+run = "uv run pytest test_analyse.py -v"
+
+[tasks.test-cov]
+description = "🧪 Exécuter les tests avec couverture de code"
+run = "uv run pytest test_analyse.py -v --cov=analyse --cov-report=html --cov-report=term"
+
+[tasks.test-watch]
+description = "🧪 Exécuter les tests en mode watch"
+run = "uv run pytest test_analyse.py -v --watch"
+
+# =============================================================================
+# DÉVELOPPEMENT
+# =============================================================================
+
+[tasks.install]
+description = "📦 Installer les dépendances du projet"
+run = """
+#!/bin/bash
+echo "📦 Installation des dépendances..."
+uv sync
+echo "✓ Dépendances installées"
+"""
+
+[tasks.install-spark]
+description = "📦 Instructions pour installer Apache Spark (macOS)"
+run = '''
+#!/bin/bash
+echo "📦 Installation d'Apache Spark"
+echo "=============================="
+echo ""
+echo "Pour macOS avec Homebrew:"
+echo ""
+echo "1️⃣  Installer Java 17:"
+echo "    brew install openjdk@17"
+echo ""
+echo "2️⃣  Installer Apache Spark:"
+echo "    brew install apache-spark"
+echo ""
+echo "3️⃣  Configurer les variables d'environnement:"
+echo "    export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
+echo "    export SPARK_HOME=/opt/homebrew/opt/apache-spark/libexec"
+echo "    export PATH=\$SPARK_HOME/bin:\$PATH"
+echo ""
+echo "4️⃣  Vérifier l'installation:"
+echo "    spark-shell --version"
+echo ""
+echo "💡 Note: PySpark fonctionne aussi sans installer Spark séparément"
+echo "   mais le mode cluster nécessite l'installation complète."
+'''
+
+[tasks.lint]
+description = "🔍 Vérifier le code avec ruff"
+run = "uv run ruff check ."
+
+[tasks.lint-fix]
+description = "🔧 Corriger les erreurs de lint automatiquement"
+run = "uv run ruff check . --fix"
+
+[tasks.format]
+description = "✨ Formater le code avec ruff"
+run = "uv run ruff format ."
+
+[tasks.check]
+description = "🔎 Vérifier le typage avec mypy"
+run = "uv run mypy analyse.py"
+
+# =============================================================================
+# DONNÉES
+# =============================================================================
+
+[tasks.data-info]
+description = "📋 Afficher les informations sur le dataset"
+run = """
+#!/bin/bash
+echo "📋 Informations sur le dataset"
+echo "=============================="
+echo ""
+echo "📁 Fichier: $DATA_FILE"
+echo ""
+
+if [ -f "$DATA_FILE" ]; then
+    echo "📊 Statistiques:"
+    echo "   Lignes: $(wc -l < $DATA_FILE)"
+    echo "   Colonnes: $(head -1 $DATA_FILE | tr ',' '\n' | wc -l)"
+    echo ""
+    echo "📝 En-têtes:"
+    head -1 $DATA_FILE | tr ',' '\n' | nl
+    echo ""
+    echo "👀 Aperçu (5 premières lignes):"
+    head -6 $DATA_FILE | column -t -s','
+else
+    echo "❌ Fichier non trouvé: $DATA_FILE"
+fi
+"""
+
+[tasks.data-generate]
+description = "🔄 Générer un nouveau dataset de test"
+run = """
+#!/bin/bash
+echo "🔄 Génération d'un nouveau dataset de test..."
+uv run python -c "
+import random
+import csv
+
+departments = ['IT', 'HR', 'Sales', 'Marketing', 'Finance', 'Operations']
+genders = ['M', 'F']
+
+with open('data/employee_data.csv', 'w', newline='') as f:
+    writer = csv.writer(f)
+    writer.writerow(['id', 'age', 'gender', 'salary', 'department', 'experience_years', 'satisfaction_score', 'performance_rating'])
+    
+    for i in range(1, 501):
+        age = random.randint(22, 60)
+        exp = min(age - 22, random.randint(0, 35))
+        salary = 30000 + (exp * 2000) + random.randint(-5000, 15000)
+        
+        writer.writerow([
+            i,
+            age,
+            random.choice(genders),
+            salary,
+            random.choice(departments),
+            exp,
+            round(random.uniform(3, 10), 1),
+            round(random.uniform(2, 5), 1)
+        ])
+
+print('✓ Dataset généré: data/employee_data.csv (500 employés)')
+"
+"""
+
+# =============================================================================
+# UTILITAIRES
+# =============================================================================
+
+[tasks.clean]
+description = "🧹 Nettoyer les fichiers temporaires"
+run = """
+#!/bin/bash
+echo "🧹 Nettoyage des fichiers temporaires..."
+rm -rf __pycache__
+rm -rf .pytest_cache
+rm -rf .mypy_cache
+rm -rf .ruff_cache
+rm -rf htmlcov
+rm -rf .coverage
+rm -rf *.egg-info
+rm -rf spark-warehouse
+rm -rf metastore_db
+rm -rf derby.log
+find . -name "*.pyc" -delete
+find . -name "*.pyo" -delete
+find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+echo "✓ Nettoyage terminé"
+"""
+
+[tasks.info]
+description = "ℹ️  Afficher les informations du projet"
+run = """
+#!/bin/bash
+echo "ℹ️  Informations du projet"
+echo "========================="
+echo ""
+echo "📦 Projet: analyse-pyspark"
+echo "🐍 Python: $(python --version 2>&1)"
+echo "☕ Java: $(java -version 2>&1 | head -1)"
+echo ""
+echo "📁 Structure:"
+ls -la
+echo ""
+echo "🔧 Variables d'environnement Spark:"
+echo "   JAVA_HOME: $JAVA_HOME"
+echo "   SPARK_HOME: $SPARK_HOME"
+echo "   SPARK_MASTER_HOST: $SPARK_MASTER_HOST"
+echo "   SPARK_MASTER_PORT: $SPARK_MASTER_PORT"
+"""
+
+[tasks.help]
+description = "❓ Afficher l'aide et les commandes disponibles"
+run = """
+#!/bin/bash
+echo "❓ Aide - Analyse PySpark"
+echo "========================="
+echo ""
+echo "🌟 CLUSTER SPARK"
+echo "   mise run spark-cluster-start    - Démarrer le cluster complet"
+echo "   mise run spark-cluster-stop     - Arrêter le cluster"
+echo "   mise run spark-cluster-status   - Voir le statut du cluster"
+echo "   mise run spark-master-start     - Démarrer uniquement le Master"
+echo "   mise run spark-worker-start     - Démarrer un Worker"
+echo ""
+echo "📊 ANALYSE"
+echo "   mise run analyse                - Exécuter l'analyse (mode local)"
+echo "   mise run analyse-cluster        - Exécuter sur le cluster"
+echo "   mise run notebook               - Ouvrir Jupyter Notebook"
+echo "   mise run pyspark-shell          - Shell PySpark interactif"
+echo ""
+echo "🧪 TESTS"
+echo "   mise run test                   - Exécuter les tests"
+echo "   mise run test-cov               - Tests avec couverture"
+echo ""
+echo "🔧 DÉVELOPPEMENT"
+echo "   mise run install                - Installer les dépendances"
+echo "   mise run lint                   - Vérifier le code"
+echo "   mise run format                 - Formater le code"
+echo "   mise run clean                  - Nettoyer les fichiers temp"
+echo ""
+echo "📋 DONNÉES"
+echo "   mise run data-info              - Info sur le dataset"
+echo "   mise run data-generate          - Générer un nouveau dataset"
+echo ""
+echo "💡 Pour voir toutes les tâches: mise tasks"
+"""
