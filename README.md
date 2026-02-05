@@ -212,6 +212,225 @@ mise run spark-cluster-stop
 3. **Montrez les logs** dans la console du Worker pendant l'exécution
 4. **Comparez les performances** entre mode local et mode cluster
 
+## 🖥️ Mode Master/Worker sur plusieurs terminaux
+
+Cette section explique comment configurer un cluster Spark avec votre PC comme **Master** et lancer des **Workers** depuis d'autres terminaux (ou machines).
+
+### Architecture du cluster
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        MACHINE MASTER                           │
+│                    (Votre PC principal)                         │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │              Spark Master                                │   │
+│  │  • Coordonne le cluster                                  │   │
+│  │  • WebUI: http://<IP>:8080                              │   │
+│  │  • URL: spark://<IP>:7077                               │   │
+│  └─────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+            ┌─────────────────┼─────────────────┐
+            │                 │                 │
+            ▼                 ▼                 ▼
+    ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
+    │   Worker 1    │ │   Worker 2    │ │   Worker N    │
+    │   Terminal 2  │ │   Terminal 3  │ │  Autre machine│
+    │   Port 8081   │ │   Port 8082   │ │   Port 8081   │
+    └───────────────┘ └───────────────┘ └───────────────┘
+```
+
+### Prérequis
+
+Sur **chaque machine** (Master et Workers) :
+
+```bash
+# 1. Java 17
+brew install openjdk@17
+
+# 2. Apache Spark
+brew install apache-spark
+
+# 3. Configurer Java
+export JAVA_HOME="/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
+```
+
+### Étape 1 : Obtenir l'adresse IP du Master
+
+Sur la machine qui sera le Master :
+
+```bash
+# Afficher votre IP
+mise run get-ip
+
+# Sortie exemple:
+# 📍 Adresses IP locales:
+#    IPv4 (WiFi): 192.168.1.42
+```
+
+**Notez cette IP**, vous en aurez besoin pour connecter les Workers.
+
+### Étape 2 : Démarrer le Master (Terminal 1)
+
+```bash
+# Terminal 1 - Machine Master
+mise run spark-master-network
+```
+
+Sortie attendue :
+```
+🚀 Démarrage du Spark Master en mode réseau...
+
+📍 Configuration:
+   IP du Master: 192.168.1.42
+   Port Spark: 7077
+   Port WebUI: 8080
+
+🔗 URL de connexion pour les Workers:
+   spark://192.168.1.42:7077
+
+🌐 Interface Web (accessible depuis le réseau):
+   http://192.168.1.42:8080
+```
+
+**Gardez ce terminal ouvert** - le Master doit rester actif.
+
+### Étape 3 : Connecter un Worker (Terminal 2)
+
+Ouvrez un **nouveau terminal** (sur la même machine ou une autre) :
+
+```bash
+# Terminal 2 - Worker 1
+MASTER_IP=192.168.1.42 mise run spark-worker-connect
+```
+
+> 💡 Remplacez `192.168.1.42` par l'IP de votre Master.
+
+### Étape 4 : Ajouter d'autres Workers (Terminaux 3, 4, ...)
+
+```bash
+# Terminal 3 - Worker 2 (même machine, port différent)
+MASTER_IP=192.168.1.42 WORKER_PORT=8082 mise run spark-worker-connect-custom
+
+# Terminal 4 - Worker 3 (autre machine)
+MASTER_IP=192.168.1.42 mise run spark-worker-connect
+```
+
+### Configuration personnalisée des Workers
+
+Vous pouvez ajuster les ressources de chaque Worker :
+
+```bash
+MASTER_IP=192.168.1.42 \
+WORKER_CORES=4 \
+WORKER_MEM=4g \
+WORKER_PORT=8083 \
+mise run spark-worker-connect-custom
+```
+
+| Variable | Description | Valeur par défaut |
+|----------|-------------|-------------------|
+| `MASTER_IP` | IP du Master Spark | (requis) |
+| `WORKER_CORES` | Nombre de cores CPU | 2 |
+| `WORKER_MEM` | Mémoire allouée | 2g |
+| `WORKER_PORT` | Port WebUI du Worker | 8081 |
+
+### Étape 5 : Vérifier le cluster
+
+1. **Interface Web Master** : http://192.168.1.42:8080
+   - Voir tous les Workers connectés
+   - État des ressources (cores, mémoire)
+   - Applications en cours
+
+2. **Interface Web Workers** :
+   - Worker 1 : http://localhost:8081
+   - Worker 2 : http://localhost:8082
+
+3. **Ligne de commande** :
+   ```bash
+   mise run spark-cluster-status
+   ```
+
+### Étape 6 : Exécuter une analyse sur le cluster
+
+```bash
+# Soumettre l'analyse au cluster réseau
+MASTER_IP=192.168.1.42 mise run analyse-network
+```
+
+Ou utilisez le shell PySpark connecté :
+
+```bash
+# Shell interactif
+MASTER_IP=192.168.1.42 mise run pyspark-shell-cluster
+```
+
+### Exemple complet : 3 Terminaux
+
+```bash
+# ═══════════════════════════════════════════════════════
+# TERMINAL 1 : Master
+# ═══════════════════════════════════════════════════════
+mise run spark-master-network
+# → Gardez ouvert, notez l'IP (ex: 192.168.1.42)
+
+# ═══════════════════════════════════════════════════════
+# TERMINAL 2 : Worker 1
+# ═══════════════════════════════════════════════════════
+MASTER_IP=192.168.1.42 mise run spark-worker-connect
+# → Gardez ouvert
+
+# ═══════════════════════════════════════════════════════
+# TERMINAL 3 : Worker 2 (port différent)
+# ═══════════════════════════════════════════════════════
+MASTER_IP=192.168.1.42 WORKER_PORT=8082 mise run spark-worker-connect-custom
+# → Gardez ouvert
+
+# ═══════════════════════════════════════════════════════
+# TERMINAL 4 : Exécuter l'analyse
+# ═══════════════════════════════════════════════════════
+MASTER_IP=192.168.1.42 mise run analyse-network
+```
+
+### 📋 Commandes réseau
+
+| Commande | Description |
+|----------|-------------|
+| `mise run get-ip` | 🌐 Afficher l'IP de la machine |
+| `mise run spark-master-network` | 🚀 Démarrer le Master (mode réseau) |
+| `MASTER_IP=<ip> mise run spark-worker-connect` | 👷 Connecter un Worker |
+| `MASTER_IP=<ip> mise run spark-worker-connect-custom` | 👷 Worker avec config personnalisée |
+| `MASTER_IP=<ip> mise run analyse-network` | 📊 Analyse sur cluster réseau |
+
+### Résolution des problèmes
+
+#### ❌ Le Worker ne se connecte pas au Master
+
+1. **Vérifiez le pare-feu** : Le port 7077 doit être ouvert
+   ```bash
+   # macOS - Autoriser les connexions
+   sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add /opt/homebrew/opt/apache-spark/libexec/bin/spark-class
+   ```
+
+2. **Vérifiez la connectivité** :
+   ```bash
+   # Depuis le Worker, tester la connexion
+   nc -zv 192.168.1.42 7077
+   ```
+
+3. **Vérifiez les logs** : Les erreurs s'affichent dans le terminal du Worker
+
+#### ❌ Erreur "Connection refused"
+
+- Assurez-vous que le Master est démarré **avant** les Workers
+- Vérifiez que l'IP du Master est correcte
+- Les machines doivent être sur le même réseau
+
+#### ❌ Workers non visibles dans l'UI
+
+- Attendez quelques secondes après le démarrage
+- Rafraîchissez l'interface Web du Master
+
 ## 📈 Analyses réalisées
 
 Le script effectue les analyses suivantes:

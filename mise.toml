@@ -12,10 +12,10 @@
 [env]
 # Configuration Java pour PySpark
 JAVA_HOME = "/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
-# Configuration Spark
+# Configuration Spark (Homebrew)
+SPARK_HOME = "/opt/homebrew/opt/apache-spark/libexec"
 # Note: SPARK_HOME est optionnel si Spark n'est pas installé séparément
 # PySpark intégré fonctionnera en mode local sans SPARK_HOME
-# SPARK_HOME = "{{ env.HOME }}/.local/share/spark"
 SPARK_MASTER_HOST = "localhost"
 SPARK_MASTER_PORT = "7077"
 SPARK_MASTER_WEBUI_PORT = "8080"
@@ -25,6 +25,8 @@ SPARK_WORKER_MEMORY = "2g"
 # Configuration PySpark
 PYSPARK_PYTHON = "python3"
 PYSPARK_DRIVER_PYTHON = "python3"
+# Ajouter Spark au PATH
+PATH = "/opt/homebrew/opt/apache-spark/libexec/bin:/opt/homebrew/opt/apache-spark/libexec/sbin:{{ env.PATH }}"
 # Dataset
 DATA_FILE = "data/employee_data.csv"
 
@@ -223,6 +225,200 @@ jps 2>/dev/null | grep -E "(Master|Worker)" || echo "   Aucun processus Spark tr
 """
 
 # =============================================================================
+# CLUSTER SPARK - MODE RÉSEAU (Multi-terminaux / Multi-machines)
+# =============================================================================
+
+[tasks.get-ip]
+description = "🌐 Afficher l'adresse IP de cette machine (pour le cluster réseau)"
+run = """
+#!/bin/bash
+echo "🌐 Adresses IP de cette machine"
+echo "==============================="
+echo ""
+echo "📍 Adresses IP locales:"
+
+# macOS
+if command -v ifconfig &> /dev/null; then
+    echo "   IPv4 (WiFi):    $(ipconfig getifaddr en0 2>/dev/null || echo 'Non connecté')"
+    echo "   IPv4 (Ethernet): $(ipconfig getifaddr en1 2>/dev/null || echo 'Non connecté')"
+fi
+
+# Linux
+if command -v hostname &> /dev/null; then
+    IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+    [ -n "$IP" ] && echo "   IPv4 (hostname): $IP"
+fi
+
+echo ""
+echo "💡 Utilisez cette IP comme MASTER_IP pour connecter des Workers distants"
+echo ""
+echo "Exemple:"
+echo "   Sur le Master:  mise run spark-master-network"
+echo "   Sur le Worker:  MASTER_IP=<votre_ip> mise run spark-worker-connect"
+"""
+
+[tasks.spark-master-network]
+description = "🚀 Démarrer le Master Spark accessible sur le réseau"
+run = """
+#!/bin/bash
+set -e
+
+# Obtenir l'IP locale
+if command -v ipconfig &> /dev/null; then
+    LOCAL_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "localhost")
+else
+    LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
+fi
+
+echo "🚀 Démarrage du Spark Master en mode réseau..."
+echo ""
+echo "📍 Configuration:"
+echo "   IP du Master: $LOCAL_IP"
+echo "   Port Spark: $SPARK_MASTER_PORT"
+echo "   Port WebUI: $SPARK_MASTER_WEBUI_PORT"
+echo ""
+echo "🔗 URL de connexion pour les Workers:"
+echo "   spark://$LOCAL_IP:$SPARK_MASTER_PORT"
+echo ""
+echo "🌐 Interface Web (accessible depuis le réseau):"
+echo "   http://$LOCAL_IP:$SPARK_MASTER_WEBUI_PORT"
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "📋 Pour connecter un Worker depuis un autre terminal/machine:"
+echo ""
+echo "   MASTER_IP=$LOCAL_IP mise run spark-worker-connect"
+echo ""
+echo "   Ou manuellement:"
+echo "   spark-class org.apache.spark.deploy.worker.Worker spark://$LOCAL_IP:$SPARK_MASTER_PORT"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+if command -v spark-class &> /dev/null; then
+    echo "⏳ Démarrage du Master..."
+    spark-class org.apache.spark.deploy.master.Master \
+        --host $LOCAL_IP \
+        --port $SPARK_MASTER_PORT \
+        --webui-port $SPARK_MASTER_WEBUI_PORT
+else
+    echo "⚠️  Spark n'est pas installé."
+    echo "   Installez-le avec: brew install apache-spark"
+fi
+"""
+
+[tasks.spark-worker-connect]
+description = "👷 Connecter un Worker à un Master distant (utiliser MASTER_IP=<ip>)"
+run = """
+#!/bin/bash
+set -e
+
+# Vérifier si MASTER_IP est défini
+if [ -z "$MASTER_IP" ]; then
+    echo "❌ Erreur: MASTER_IP n'est pas défini"
+    echo ""
+    echo "Usage:"
+    echo "   MASTER_IP=192.168.1.100 mise run spark-worker-connect"
+    echo ""
+    echo "💡 Pour obtenir l'IP du Master, exécutez sur la machine Master:"
+    echo "   mise run get-ip"
+    exit 1
+fi
+
+MASTER_URL="spark://$MASTER_IP:$SPARK_MASTER_PORT"
+
+echo "👷 Démarrage du Spark Worker..."
+echo ""
+echo "📍 Configuration:"
+echo "   Master URL: $MASTER_URL"
+echo "   Cores: $SPARK_WORKER_CORES"
+echo "   Memory: $SPARK_WORKER_MEMORY"
+echo "   WebUI local: http://localhost:$SPARK_WORKER_WEBUI_PORT"
+echo ""
+
+if command -v spark-class &> /dev/null; then
+    echo "⏳ Connexion au Master..."
+    spark-class org.apache.spark.deploy.worker.Worker \
+        --cores $SPARK_WORKER_CORES \
+        --memory $SPARK_WORKER_MEMORY \
+        --webui-port $SPARK_WORKER_WEBUI_PORT \
+        $MASTER_URL
+else
+    echo "⚠️  Spark n'est pas installé."
+    echo "   Installez-le avec: brew install apache-spark"
+fi
+"""
+
+[tasks.spark-worker-connect-custom]
+description = "👷 Connecter un Worker avec configuration personnalisée"
+run = """
+#!/bin/bash
+set -e
+
+# Variables avec valeurs par défaut
+MASTER_IP="${MASTER_IP:-localhost}"
+WORKER_CORES="${WORKER_CORES:-$SPARK_WORKER_CORES}"
+WORKER_MEM="${WORKER_MEM:-$SPARK_WORKER_MEMORY}"
+WORKER_PORT="${WORKER_PORT:-$SPARK_WORKER_WEBUI_PORT}"
+
+MASTER_URL="spark://$MASTER_IP:$SPARK_MASTER_PORT"
+
+echo "👷 Démarrage du Spark Worker (configuration personnalisée)..."
+echo ""
+echo "📍 Configuration:"
+echo "   Master URL: $MASTER_URL"
+echo "   Cores: $WORKER_CORES"
+echo "   Memory: $WORKER_MEM"
+echo "   WebUI Port: $WORKER_PORT"
+echo ""
+echo "💡 Variables personnalisables:"
+echo "   MASTER_IP=<ip> WORKER_CORES=4 WORKER_MEM=4g WORKER_PORT=8082 mise run spark-worker-connect-custom"
+echo ""
+
+if command -v spark-class &> /dev/null; then
+    spark-class org.apache.spark.deploy.worker.Worker \
+        --cores $WORKER_CORES \
+        --memory $WORKER_MEM \
+        --webui-port $WORKER_PORT \
+        $MASTER_URL
+else
+    echo "⚠️  Spark n'est pas installé."
+fi
+"""
+
+[tasks.analyse-network]
+description = "📊 Exécuter l'analyse sur un cluster réseau (utiliser MASTER_IP=<ip>)"
+run = """
+#!/bin/bash
+set -e
+
+if [ -z "$MASTER_IP" ]; then
+    echo "❌ Erreur: MASTER_IP n'est pas défini"
+    echo ""
+    echo "Usage:"
+    echo "   MASTER_IP=192.168.1.100 mise run analyse-network"
+    exit 1
+fi
+
+MASTER_URL="spark://$MASTER_IP:$SPARK_MASTER_PORT"
+
+echo "📊 Exécution de l'analyse sur le cluster réseau..."
+echo "   Master: $MASTER_URL"
+echo ""
+
+if command -v spark-submit &> /dev/null; then
+    spark-submit \
+        --master $MASTER_URL \
+        --deploy-mode client \
+        --driver-memory 2g \
+        --executor-memory 2g \
+        --executor-cores 2 \
+        analyse.py
+else
+    echo "⚠️  spark-submit non trouvé"
+    echo "   Utilisez: MASTER_IP=$MASTER_IP uv run python -c 'from pyspark.sql import SparkSession; ...'"
+fi
+"""
+
+# =============================================================================
 # ANALYSE DE DONNÉES
 # =============================================================================
 
@@ -290,6 +486,8 @@ run = """
 echo "🌐 Lancement de l'application Streamlit..."
 echo "   URL: http://localhost:8501"
 echo ""
+# Utiliser Java 17 pour compatibilité avec PySpark 3.5
+export JAVA_HOME="/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
 # Désactiver SPARK_HOME si Spark n'est pas installé séparément
 if [ ! -d "${SPARK_HOME}/bin" ]; then
     unset SPARK_HOME
@@ -305,6 +503,8 @@ echo "🌐 Lancement de Streamlit en mode développement..."
 echo "   URL: http://localhost:8501"
 echo "   Rechargement automatique activé"
 echo ""
+# Utiliser Java 17 pour compatibilité avec PySpark 3.5
+export JAVA_HOME="/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
 if [ ! -d "${SPARK_HOME}/bin" ]; then
     unset SPARK_HOME
 fi
