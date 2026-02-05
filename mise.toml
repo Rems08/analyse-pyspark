@@ -279,6 +279,38 @@ echo "📓 Lancement de Jupyter Notebook..."
 uv run jupyter notebook analyse_notebook.ipynb
 """
 
+# =============================================================================
+# STREAMLIT - INTERFACE WEB INTERACTIVE
+# =============================================================================
+
+[tasks.streamlit]
+description = "🌐 Lancer l'application Streamlit pour visualiser les données"
+run = """
+#!/bin/bash
+echo "🌐 Lancement de l'application Streamlit..."
+echo "   URL: http://localhost:8501"
+echo ""
+# Désactiver SPARK_HOME si Spark n'est pas installé séparément
+if [ ! -d "${SPARK_HOME}/bin" ]; then
+    unset SPARK_HOME
+fi
+uv run streamlit run streamlit_app.py --server.port 8501
+"""
+
+[tasks.streamlit-dev]
+description = "🌐 Lancer Streamlit en mode développement (avec rechargement auto)"
+run = """
+#!/bin/bash
+echo "🌐 Lancement de Streamlit en mode développement..."
+echo "   URL: http://localhost:8501"
+echo "   Rechargement automatique activé"
+echo ""
+if [ ! -d "${SPARK_HOME}/bin" ]; then
+    unset SPARK_HOME
+fi
+uv run streamlit run streamlit_app.py --server.port 8501 --server.runOnSave true
+"""
+
 [tasks.lab]
 description = "🧪 Lancer JupyterLab pour l'analyse interactive"
 run = """

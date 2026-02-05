@@ -2,10 +2,13 @@
 
 ![PySpark](https://img.shields.io/badge/PySpark-3.5+-orange.svg)
 ![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
+![Streamlit](https://img.shields.io/badge/Streamlit-1.40+-red.svg)
 
 ## 📖 Description
 
 Ce projet réalise une analyse complète d'un dataset en utilisant **Apache PySpark**. Il démontre l'utilisation de PySpark pour l'exploration de données, les statistiques descriptives, les analyses par groupes, et les corrélations.
+
+**Nouveau** : Une interface interactive **Streamlit** permet de visualiser et d'explorer les données de manière conviviale.
 
 ## 🎯 Objectifs
 
@@ -14,6 +17,7 @@ Ce projet réalise une analyse complète d'un dataset en utilisant **Apache PySp
 - Analyser les données par groupes (départements, genre)
 - Calculer des corrélations entre variables
 - Générer des insights business
+- **Visualiser les données avec une interface Streamlit interactive**
 
 ## 📊 Dataset
 
@@ -60,6 +64,31 @@ mise run install-spark
 ```
 
 ## 💻 Utilisation
+
+### 🌐 Interface Streamlit (recommandé)
+
+Lancez l'application Streamlit pour une exploration interactive des données :
+
+```bash
+# Avec mise
+mise run streamlit
+
+# Ou directement
+streamlit run streamlit_app.py
+```
+
+L'interface Streamlit offre :
+- **📈 Vue d'ensemble** : Métriques clés et graphiques de synthèse
+- **🏢 Analyse par Département** : Statistiques détaillées par département
+- **📊 Distributions** : Histogrammes et scatter plots interactifs
+- **🔗 Corrélations** : Matrice de corrélation et heatmap
+- **📋 Données brutes** : Exploration et export des données
+
+**Filtres disponibles** :
+- Département
+- Genre
+- Tranche d'âge
+- Tranche de salaire
 
 ### Mode simple (local)
 

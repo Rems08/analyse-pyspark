@@ -1,11 +1,17 @@
 [project]
 name = "analyse-pyspark"
 version = "0.1.0"
-description = "Add your description here"
-requires-python = ">=3.12"
+description = "Analyse PySpark d'un dataset d'employés avec interface Streamlit"
+requires-python = ">=3.12,<3.14"
 dependencies = [
-    "matplotlib>=3.10.8",
-    "pandas>=3.0.0",
+    "matplotlib>=3.7.0",
+    "pandas>=2.0.0,<3.0.0",
     "pyspark>=3.5.0,<4.0.0",
     "seaborn>=0.13.2",
+    "streamlit>=1.40.0",
+    "plotly>=5.24.0",
+    "setuptools>=70.0.0",
 ]
+
+[project.scripts]
+analyse = "main:main"
